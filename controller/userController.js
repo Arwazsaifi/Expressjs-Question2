@@ -2,6 +2,11 @@ const { validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user');
 const connectDB=require('../connection/database')
+const AccessToken=require('../models/AccessToken')
+const auth=require('../middleware/auth')
+const mongoose =require('mongoose');
+const md5=require('md5');
+
 connectDB();
 
 const registerUser = async (req, res) => {
@@ -61,11 +66,21 @@ const loginUser = async (req, res) => {
       return res.status(400).json({ message: 'Incorrect password.' });
     }
 
-    const access_token = user._id;
-    res.status(200).json({ access_token });
+ // Generate account token using MD5
+ const accountToken = md5(username + Date.now());
+
+ // Save the account token in the access_token collection
+ const tokenData = new AccessToken({
+   user_id: user._id,
+   access_token: accountToken,
+   expiry: Date.now() + 3600000, // 1 hour expiry
+ });
+ await tokenData.save();
+
+ res.status(200).json({ access_token: accountToken });
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ message: 'Please fix the error.' });
+    res.status(500).json({ message: 'internal server error during login' });
   }
 };
 
@@ -82,7 +97,7 @@ const deleteUser = async (req, res) => {
     return res.status(200).json({ message: 'User deleted.' });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: 'An error occurred during user deletion.' });
+    return res.status(500).json({ message: 'internal server error during deletation of user' });
   }
 };
 
@@ -96,9 +111,67 @@ const getUserList = async (req, res) => {
     res.status(200).json(users);
   } catch (error) {
     console.error('Error:', error);
-    res.status(500).json({ message: 'Error getting users.' });
+    res.status(500).json({ message: 'internal server error for getting users list.' });
   }
 };
+
+const userAddress= async(req,res)=>
+{
+  try{
+       const{
+        user_id,
+        address,
+        city,
+        state,
+        pin_code,
+        phone_no}=req.body;
+        const user = await User.findById(user_id);
+        if (!user) {
+          return res.status(404).json({ message: 'User not found.' });
+        }
+    
+        // Create a new address object
+        const newAddress = {
+          address,
+          city,
+          state,
+          pin_code,
+          phone_no,
+        };
+    
+        // Add the new address to the user's addresses array
+        user.addresses.push(newAddress);
+    
+        // Save the updated user with the new address
+        await user.save();
+    
+        res.status(201).json({ message: 'Address added successfully.' });
+      } catch (error) {
+        console.error('Error:', error);
+        res.status(500).json({ message: 'internal server Error during adding address.' });
+      }
+}
+const getUserById= async(req,res)=>
+{
+   try{
+      const userId=req.params.id;
+      
+      const user=await User.findById(userId).populate('addresses');
+      if(!user)
+      {
+        return res.status(404).json({message:"user not found."});
+      }
+     
+      res.status(200).json(user);
+      //console.log('working');
+   }
+   catch(error)
+   {
+    console.error("error:",error)
+    return res.status(500).json({message:"internal server error for getting user by ID"});
+   }
+}
+
 
 module.exports = {
   registerUser,
@@ -106,4 +179,6 @@ module.exports = {
   getUser,
   deleteUser,
   getUserList,
+  userAddress,
+  getUserById,
 };
